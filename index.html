@@ -2,57 +2,55 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hệ Thống SOS Cloud</title>
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <style>
         :root { --blue: #1e40af; --red: #dc2626; --green: #16a34a; --dark: #0f172a; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--dark); margin: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--dark); margin: 0; color: #333; }
         
-        /* Giao diện Login */
-        #login-page { height: 100vh; display: flex; justify-content: center; align-items: center; background: #0f172a; }
-        .login-box { background: white; padding: 30px; border-radius: 20px; text-align: center; width: 90%; max-width: 360px; }
+        /* Màn hình đăng nhập */
+        #login-page { height: 100vh; display: flex; justify-content: center; align-items: center; background: #0f172a; position: fixed; width: 100%; z-index: 1000; }
+        .login-box { background: white; padding: 30px; border-radius: 20px; text-align: center; width: 90%; max-width: 360px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
         .tab-group { display: flex; margin-bottom: 20px; background: #f1f5f9; border-radius: 10px; padding: 5px; }
         .tab { flex: 1; padding: 10px; cursor: pointer; border-radius: 8px; font-weight: bold; color: #64748b; }
-        .tab.active { background: white; color: var(--blue); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .inp { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-        .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; color: white; font-weight: bold; cursor: pointer; background: var(--blue); }
+        .tab.active { background: white; color: var(--blue); }
+        .inp { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; outline: none; }
+        .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; color: white; font-weight: bold; cursor: pointer; background: var(--blue); margin-top: 10px; }
+        .btn:active { opacity: 0.8; }
 
-        /* Dashboard */
+        /* Màn hình chính */
         #dash { display: none; padding: 15px; background: #f8fafc; min-height: 100vh; }
         .header { font-size: 18px; font-weight: bold; padding: 15px; border-radius: 12px; text-align: center; color: white; margin-bottom: 20px; position: relative; }
         .safe-bg { background: var(--green); }
-        .danger-bg { background: var(--red); animation: flash 0.6s infinite; }
-        @keyframes flash { 50% { opacity: 0.7; } }
+        .danger-bg { background: var(--red); animation: blink 0.8s infinite; }
+        @keyframes blink { 50% { opacity: 0.7; } }
         
         .logout-btn { position: absolute; right: 15px; top: 12px; background: rgba(255,255,255,0.2); padding: 5px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid white; }
-        .grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; }
         .card { background: white; padding: 15px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px; }
-        #map-frame { width: 100%; height: 300px; border-radius: 12px; }
-        #logs { background: #1e293b; color: #38bdf8; padding: 10px; height: 180px; overflow-y: auto; font-family: monospace; border-radius: 8px; font-size: 11px; }
-        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+        #map-frame { width: 100%; height: 300px; border-radius: 12px; background: #eee; }
+        #logs { background: #1e293b; color: #38bdf8; padding: 10px; height: 150px; overflow-y: auto; font-family: monospace; border-radius: 8px; font-size: 11px; margin-top: 10px; }
     </style>
 </head>
 <body>
 
     <div id="login-page">
         <div class="login-box">
-            <h2 style="color: var(--blue);">SOS CLOUD</h2>
+            <h2 style="color: var(--blue); margin-top: 0;">SOS SYSTEM</h2>
             <div class="tab-group">
-                <div class="tab active" id="tab-login" onclick="switchTab('login')">Đăng nhập</div>
-                <div class="tab" id="tab-reg" onclick="switchTab('reg')">Đăng ký</div>
+                <div class="tab active" id="tab-login" onclick="setTab('login')">Đăng nhập</div>
+                <div class="tab" id="tab-reg" onclick="setTab('reg')">Đăng ký</div>
             </div>
-            <input type="text" id="user_id" class="inp" placeholder="Mã định danh">
+            <input type="text" id="user_id" class="inp" placeholder="Tên đăng nhập">
             <input type="password" id="user_pass" class="inp" placeholder="Mật khẩu">
             <button class="btn" id="auth-btn" onclick="handleAuth()">VÀO HỆ THỐNG</button>
-            <p id="msg" style="color:red; font-size:12px; margin-top:10px"></p>
+            <p id="error-text" style="color: red; font-size: 12px; margin-top: 10px;"></p>
         </div>
     </div>
 
@@ -61,95 +59,127 @@
             <span id="st-text">TRẠNG THÁI: AN TOÀN</span>
             <div class="logout-btn" onclick="location.reload()">Đăng xuất</div>
         </div>
-        <div class="grid">
-            <div class="card">
-                <h3>Vị trí</h3>
-                <div id="map-frame"></div>
-            </div>
-            <div class="card">
-                <h3>Điều khiển & Nhật ký</h3>
-                <button class="btn" style="background:#334155; margin-bottom:15px" onclick="sendReset()">XÁC NHẬN AN TOÀN</button>
-                <div id="logs"></div>
-            </div>
+        
+        <div class="card">
+            <h3 style="margin-top:0">Vị trí xe</h3>
+            <div id="map-frame"></div>
+        </div>
+
+        <div class="card">
+            <button class="btn" style="background:#334155" onclick="sendReset()">XÁC NHẬN AN TOÀN</button>
+            <div id="logs"></div>
         </div>
     </div>
 
     <script>
-        // CẤU HÌNH ĐÃ CẬP NHẬT LINK SINGAPORE CỦA BẠN
+        // 1. CẤU HÌNH FIREBASE - HÃY THAY MÃ CỦA BẠN VÀO ĐÂY
         const firebaseConfig = {
-            apiKey: "AIzaSyChyZAmeBu2WLwsEzVrWFULbTYpl-nG0fE", 
+            apiKey: "AIzaSyChyZAmeBu2WLwsEzVrWFULbTYpl-nG0fE",
             authDomain: "hethongsos.firebaseapp.com",
             databaseURL: "https://hethongsos-default-rtdb.asia-southeast1.firebasedatabase.app",
             projectId: "hethongsos",
             storageBucket: "hethongsos.appspot.com",
             messagingSenderId: "922952133122",
-            appId: "1:922952133122:web:your_id"
+            appId: "1:922952133122:web:8da5b17a64aa7c7954551b"
         };
 
-        firebase.initializeApp(firebaseConfig);
+        // Khởi tạo Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
         const db = firebase.database();
-        let currentTab = 'login';
+        let mode = 'login';
         let map, marker, mqtt;
 
-        function switchTab(t) {
-            currentTab = t;
-            document.getElementById('tab-login').classList.toggle('active', t==='login');
-            document.getElementById('tab-reg').classList.toggle('active', t==='reg');
-            document.getElementById('auth-btn').innerText = t==='login' ? 'VÀO HỆ THỐNG' : 'TẠO TÀI KHOẢN';
+        // Chuyển đổi tab Đăng ký / Đăng nhập
+        function setTab(t) {
+            mode = t;
+            document.getElementById('tab-login').className = (t === 'login' ? 'tab active' : 'tab');
+            document.getElementById('tab-reg').className = (t === 'reg' ? 'tab active' : 'tab');
+            document.getElementById('auth-btn').innerText = (t === 'login' ? 'VÀO HỆ THỐNG' : 'TẠO TÀI KHOẢN');
+            document.getElementById('error-text').innerText = "";
         }
 
+        // Xử lý logic Đăng ký & Đăng nhập
         function handleAuth() {
             const id = document.getElementById('user_id').value.trim();
             const pass = document.getElementById('user_pass').value.trim();
-            if(!id || !pass) return alert("Thiếu tin!");
+            const err = document.getElementById('error-text');
 
-            if(currentTab === 'reg') {
-                db.ref('users/' + id).set({ password: pass }).then(() => {
+            if(!id || !pass) {
+                err.innerText = "Vui lòng nhập đầy đủ tên và mật khẩu!";
+                return;
+            }
+
+            if(mode === 'reg') {
+                // Lệnh ĐĂNG KÝ
+                db.ref('users/' + id).set({ password: pass })
+                .then(() => {
                     alert("Đăng ký thành công! Đang chuyển sang Đăng nhập...");
-                    switchTab('login'); // Tự nhảy sang tab đăng nhập
-                });
+                    setTab('login'); // Tự động chuyển tab
+                })
+                .catch(() => { err.innerText = "Lỗi: Không thể kết nối Firebase!"; });
             } else {
-                db.ref('users/' + id).once('value').then(s => {
-                    if(s.exists() && s.val().password === pass) {
-                        document.getElementById('login-page').style.display='none';
-                        document.getElementById('dash').style.display='block';
-                        initApp();
-                    } else { document.getElementById('msg').innerText="Sai thông tin!"; }
+                // Lệnh ĐĂNG NHẬP
+                db.ref('users/' + id).once('value').then((snapshot) => {
+                    if(snapshot.exists() && snapshot.val().password === pass) {
+                        document.getElementById('login-page').style.display = 'none';
+                        document.getElementById('dash').style.display = 'block';
+                        startApp();
+                    } else {
+                        err.innerText = "Sai tên đăng nhập hoặc mật khẩu!";
+                    }
                 });
             }
         }
 
-        function initApp() {
+        // Khởi tạo Bản đồ và MQTT sau khi vào được hệ thống
+        function startApp() {
+            // Load bản đồ
             map = L.map('map-frame').setView([21.0285, 105.8542], 15);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             marker = L.marker([21.0285, 105.8542]).addTo(map);
             
-            mqtt = new Paho.MQTT.Client("broker.hivemq.com", 8000, "cl_"+Math.random());
-            mqtt.onMessageArrived = (m) => {
-                const d = m.payloadString.split('|');
-                if(d[0]==='danger') {
-                    document.getElementById('st-header').className="header danger-bg";
-                    document.getElementById('st-text').innerText="!!! CẢNH BÁO TAI NẠN !!!";
-                    const lat=parseFloat(d[1]), lng=parseFloat(d[2]);
+            // Kết nối MQTT
+            mqtt = new Paho.MQTT.Client("broker.hivemq.com", 8000, "user_" + Math.random().toString(16).substr(2, 8));
+            
+            mqtt.onMessageArrived = function(message) {
+                const data = message.payloadString.split('|');
+                if(data[0] === 'danger') {
+                    document.getElementById('st-header').className = "header danger-bg";
+                    document.getElementById('st-text').innerText = "!!! CẢNH BÁO TAI NẠN !!!";
+                    const lat = parseFloat(data[1]);
+                    const lng = parseFloat(data[2]);
                     map.setView([lat, lng], 17);
                     marker.setLatLng([lat, lng]);
-                    addLog("Phát hiện va chạm tại: " + d[1] + "," + d[2]);
+                    addLog("PHÁT HIỆN TAI NẠN tại: " + lat + ", " + lng);
                 }
             };
-            mqtt.connect({onSuccess: () => { mqtt.subscribe("hethong_sos/data"); addLog("Cloud: Connected"); }});
+
+            mqtt.connect({
+                onSuccess: function() {
+                    mqtt.subscribe("hethong_sos/data");
+                    addLog("Hệ thống Cloud: Đã sẵn sàng.");
+                },
+                useSSL: false
+            });
         }
 
         function sendReset() {
-            if(mqtt) mqtt.send(new Paho.MQTT.Message("reset_system") {{ destinationName: "hethong_sos/lenh" }});
-            document.getElementById('st-header').className="header safe-bg";
-            document.getElementById('st-text').innerText="TRẠNG THÁI: AN TOÀN";
-            addLog("Hệ thống đã reset.");
+            if(mqtt && mqtt.isConnected()) {
+                const msg = new Paho.MQTT.Message("reset_system");
+                msg.destinationName = "hethong_sos/lenh";
+                mqtt.send(msg);
+                document.getElementById('st-header').className = "header safe-bg";
+                document.getElementById('st-text').innerText = "TRẠNG THÁI: AN TOÀN";
+                addLog("Đã gửi lệnh xác nhận an toàn.");
+            }
         }
 
-        function addLog(t) {
-            const b = document.getElementById('logs');
-            b.innerHTML += `<div>> ${t}</div>`;
-            b.scrollTop = b.scrollHeight;
+        function addLog(txt) {
+            const logBox = document.getElementById('logs');
+            logBox.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${txt}</div>`;
+            logBox.scrollTop = logBox.scrollHeight;
         }
     </script>
 </body>
