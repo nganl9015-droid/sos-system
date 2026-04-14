@@ -16,7 +16,7 @@
         :root { --blue: #1e40af; --red: #dc2626; --green: #16a34a; --bg: #f1f5f9; --dark: #0f172a; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--dark); margin: 0; transition: 0.3s; overflow-x: hidden; }
         
-        /* Trang đăng nhập & Đăng ký */
+        /* Login Page */
         #login-page { height: 100vh; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #1e293b 0%, #0f172a 100%); position: fixed; width: 100%; z-index: 1000; }
         .login-box { background: white; padding: 35px; border-radius: 20px; text-align: center; width: 90%; max-width: 380px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
         
@@ -27,7 +27,7 @@
         .inp { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 14px; outline: none; }
         .inp:focus { border-color: var(--blue); }
 
-        /* Giao diện chính Dashboard */
+        /* Dashboard */
         #dash { display: none; padding: 15px; background: #f8fafc; min-height: 100vh; }
         .header { font-size: 18px; font-weight: bold; padding: 15px; border-radius: 12px; text-align: center; color: white; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); position: relative; }
         .safe-bg { background: var(--green); }
@@ -116,7 +116,7 @@
     </div>
 
     <script>
-        // --- 1. CẤU HÌNH FIREBASE ---
+        // --- 1. CONFIG FIREBASE ---
         const firebaseConfig = {
             apiKey: "AIzaSyChyZAmeBu2WLwsEzVrWFULbTYpl-nG0fE",
             authDomain: "hethongsos.firebaseapp.com",
@@ -132,7 +132,7 @@
         let authMode = 'login';
         let mqttClient, map, marker;
 
-        // --- 2. XỬ LÝ ĐĂNG NHẬP / ĐĂNG KÝ ---
+        // --- 2. AUTHENTICATION ---
         function switchMode(m) {
             authMode = m;
             document.getElementById('tab-login').className = (m === 'login' ? 'tab active' : 'tab');
@@ -149,24 +149,36 @@
             if(!id || !pass) return errorElement.innerText = "Vui lòng nhập đủ thông tin!";
 
             if(authMode === 'reg') {
-                db.ref('users/' + id).set({ password: pass }).then(() => {
-                    alert("Đăng ký thành công! Đang chuyển sang Đăng nhập...");
-                    switchMode('login');
-                }).catch(() => { errorElement.innerText = "Lỗi kết nối Firebase!"; });
-            } else {
+                // Đăng ký: Kiểm tra xem user đã tồn tại chưa
                 db.ref('users/' + id).once('value').then((snapshot) => {
-                    if(snapshot.exists() && snapshot.val().password === pass) {
+                    if(snapshot.exists()) {
+                        errorElement.innerText = "Mã định danh đã tồn tại!";
+                    } else {
+                        db.ref('users/' + id).set({ password: pass }).then(() => {
+                            alert("Đăng ký thành công! Đang chuyển sang Đăng nhập...");
+                            switchMode('login');
+                        }).catch(() => { errorElement.innerText = "Lỗi kết nối Firebase!"; });
+                    }
+                });
+            } else {
+                // Đăng nhập: Sửa lỗi logic so sánh
+                db.ref('users/' + id).once('value').then((snapshot) => {
+                    const userData = snapshot.val();
+                    if(userData && userData.password === pass) {
                         document.getElementById('login-page').style.display = 'none';
                         document.getElementById('dash').style.display = 'block';
                         initDashboard();
                     } else {
                         errorElement.innerText = "Sai mã định danh hoặc mật khẩu!";
                     }
+                }).catch(err => {
+                    errorElement.innerText = "Lỗi truy xuất dữ liệu!";
+                    console.error(err);
                 });
             }
         }
 
-        // --- 3. KHỞI TẠO HỆ THỐNG SAU ĐĂNG NHẬP ---
+        // --- 3. DASHBOARD INIT ---
         function initDashboard() {
             // Khởi tạo Map
             map = L.map('map-frame').setView([21.0285, 105.8542], 15);
@@ -182,31 +194,42 @@
             mqttClient = new Paho.MQTT.Client("broker.hivemq.com", 8000, clientId);
             
             mqttClient.onMessageArrived = (msg) => {
+                console.log("MQTT Received:", msg.payloadString);
                 const p = msg.payloadString.split('|');
                 if(p[0] === "danger") {
                     const lat = parseFloat(p[1]), lng = parseFloat(p[2]);
                     triggerSOS(lat, lng);
-                } else {
+                } else if(p[0] === "safe" || msg.payloadString === "reset_system") {
                     resetUI();
                 }
+            };
+
+            mqttClient.onConnectionLost = (err) => {
+                addLog("<span style='color:orange'>Mất kết nối MQTT. Đang thử lại...</span>");
+                setTimeout(connectMQTT, 5000);
             };
 
             mqttClient.connect({ 
                 onSuccess: () => {
                     addLog("Cloud: Đã kết nối server HiveMQ.");
                     mqttClient.subscribe("hethong_sos/data");
-                }
+                },
+                useSSL: false
             });
         }
 
-        // --- 4. TIỆN ÍCH GIAO DIỆN ---
+        // --- 4. UTILS ---
         function triggerSOS(lat, lng) {
+            if(isNaN(lat) || isNaN(lng)) return;
+
             const header = document.getElementById('st-header');
             const dash = document.getElementById('dash');
-            header.innerText = "!!! CẢNH BÁO: TAI NẠN KHẨN CẤP !!!";
+            
+            document.getElementById('st-text').innerText = "!!! CẢNH BÁO: TAI NẠN KHẨN CẤP !!!";
             header.className = "header danger-bg";
             dash.classList.add('body-danger');
-            document.getElementById('pos-info').innerText = lat + ", " + lng;
+            
+            document.getElementById('pos-info').innerText = lat.toFixed(6) + ", " + lng.toFixed(6);
             
             map.setView([lat, lng], 17);
             marker.setLatLng([lat, lng]);
@@ -218,16 +241,20 @@
 
         function resetUI() {
             const header = document.getElementById('st-header');
-            header.innerText = "HỆ THỐNG TRỰC TUYẾN: AN TOÀN";
+            document.getElementById('st-text').innerText = "HỆ THỐNG TRỰC TUYẾN: AN TOÀN";
             header.className = "header safe-bg";
             document.getElementById('dash').classList.remove('body-danger');
         }
 
         function sendResetCommand() {
             if(mqttClient && mqttClient.isConnected()) {
-                mqttClient.send(new Paho.MQTT.Message("reset_system") {{ destinationName: "hethong_sos/lenh" }});
+                const message = new Paho.MQTT.Message("reset_system");
+                message.destinationName = "hethong_sos/lenh";
+                mqttClient.send(message);
                 resetUI();
                 addLog("Đã gửi lệnh xác nhận an toàn.");
+            } else {
+                alert("Chưa kết nối MQTT Server!");
             }
         }
 
@@ -241,6 +268,9 @@
         function saveToLocalHistory(lat, lng) {
             const time = new Date().toLocaleString('vi-VN');
             let history = JSON.parse(localStorage.getItem('sos_history') || "[]");
+            // Tránh lưu trùng lặp dữ liệu trong thời gian ngắn
+            if(history.length > 0 && history[history.length-1].lat === lat) return;
+            
             history.push({time, lat, lng});
             localStorage.setItem('sos_history', JSON.stringify(history));
             renderHistoryRow(time, lat, lng);
@@ -249,7 +279,7 @@
         function renderHistoryRow(time, lat, lng) {
             const table = document.getElementById('history-body');
             const link = `https://www.google.com/maps?q=${lat},${lng}`;
-            const row = `<tr><td>${time}</td><td style="color:red;font-weight:bold">Sự cố</td><td><a href="${link}" target="_blank" class="map-link">Vị trí</a></td></tr>`;
+            const row = `<tr><td>${time}</td><td style="color:red;font-weight:bold">Sự cố</td><td><a href="${link}" target="_blank" class="map-link">Bản đồ</a></td></tr>`;
             table.insertAdjacentHTML('afterbegin', row);
         }
 
@@ -260,7 +290,7 @@
         }
 
         function clearLocalData() {
-            if(confirm("Xóa lịch sử lưu trên máy này?")) {
+            if(confirm("Xóa toàn bộ lịch sử sự cố trên máy này?")) {
                 localStorage.removeItem('sos_history');
                 location.reload();
             }
