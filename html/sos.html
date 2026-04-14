@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hệ Thống Cảnh Báo Tai Nạn SOS</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e40af">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/552/552402.png">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        :root { --blue: #1e40af; --red: #dc2626; --green: #16a34a; --bg: #f1f5f9; --dark: #0f172a; }
+        
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--dark); margin: 0; transition: 0.3s; overflow-x: hidden; }
+        
+        /* Trang đăng nhập */
+        #login-page { height: 100vh; display: flex; justify-content: center; align-items: center; background: radial-gradient(circle, #1e293b 0%, #0f172a 100%); }
+        .login-box { background: white; padding: 40px; border-radius: 20px; text-align: center; width: 90%; max-width: 360px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .inp { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+
+        /* Giao diện chính */
+        #dash { display: none; padding: 15px; background: #f8fafc; min-height: 100vh; }
+        .header { font-size: 20px; font-weight: bold; padding: 15px; border-radius: 12px; text-align: center; color: white; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .safe-bg { background: var(--green); }
+        .danger-bg { background: var(--red); animation: alertFlash 0.6s infinite; }
+        
+        @keyframes alertFlash { 0% { background: var(--red); } 50% { background: #7f1d1d; } 100% { background: var(--red); } }
+        .body-danger { background: #fee2e2 !important; }
+
+        .grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; }
+        .card { background: white; padding: 18px; border-radius: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 10px; }
+        h3 { margin-top: 0; font-size: 16px; color: #1e293b; display: flex; align-items: center; gap: 8px; }
+        
+        #logs { background: #1e293b; color: #38bdf8; padding: 12px; height: 250px; overflow-y: auto; font-family: 'Consolas', monospace; border-radius: 10px; font-size: 11px; line-height: 1.5; }
+        .history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .history-table td { padding: 8px; border-bottom: 1px solid #f1f5f9; }
+        
+        #map-frame { width: 100%; height: 300px; border-radius: 12px; border: 1px solid #e2e8f0; z-index: 1; }
+        .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; color: white; font-weight: bold; cursor: pointer; font-size: 15px; transition: 0.2s; }
+        .btn:active { transform: scale(0.95); }
+        
+        .map-link { color: var(--red); font-weight: bold; text-decoration: none; border: 1px solid var(--red); padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+
+        /* Responsive cho điện thoại */
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+            .header { font-size: 16px; }
+            #map-frame { height: 250px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="login-page">
+        <div class="login-box">
+            <i class="fas fa-shield-alt" style="font-size: 50px; color: var(--blue); margin-bottom: 15px;"></i>
+            <h2 style="color: var(--blue); margin-top: 0;">HỆ THỐNG SOS</h2>
+            <p style="color: #64748b; font-size: 14px;">Nhập mã thiết bị để bắt đầu</p>
+            <input type="text" id="ip_xe" class="inp" placeholder="Mã định danh xe (ví dụ: xe01)">
+            <input type="password" id="pass_xe" class="inp" placeholder="Mật khẩu truy cập">
+            <button class="btn" style="background: var(--blue)" onclick="handleLogin()">KẾT NỐI NGAY</button>
+        </div>
+    </div>
+
+    <div id="dash">
+        <div id="st-header" class="header safe-bg">TRẠNG THÁI: HỆ THỐNG SẴN SÀNG</div>
+        
+        <div class="grid">
+            <div class="left">
+                <div class="card">
+                    <h3><i class="fas fa-map-marker-alt" style="color:var(--red)"></i> Vị trí hiện tại</h3>
+                    <div id="map-frame"></div>
+                    <p style="margin-top:12px; font-size: 13px;">Tọa độ: <span id="pos-info" style="font-weight:bold; color:var(--blue)">Đang quét tín hiệu...</span></p>
+                </div>
+                
+                <div class="card">
+                    <h3><i class="fas fa-history"></i> Lịch sử sự cố</h3>
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        <table class="history-table">
+                            <tbody id="history-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="right">
+                <div class="card">
+                    <h3><i class="fas fa-sliders-h"></i> Bảng điều khiển</h3>
+                    <button class="btn" style="background: #334155;" onclick="sendResetCommand()">
+                        <i class="fas fa-sync-alt"></i> XÁC NHẬN AN TOÀN
+                    </button>
+                    <button onclick="clearData()" style="margin-top:10px; background:none; border:none; color:#94a3b8; cursor:pointer; font-size:11px; width: 100%; text-align: center;">Xóa toàn bộ lịch sử</button>
+                </div>
+
+                <div class="card">
+                    <h3><i class="fas fa-terminal"></i> Nhật ký hệ thống</h3>
+                    <div id="logs"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mqttClient;
+        let deviceID;
+        let map, marker;
+
+        // Khởi tạo Bản đồ (Mặc định ở Hà Nội)
+        function initMap(lat = 21.0357, lng = 105.8012) {
+            if (!map) {
+                map = L.map('map-frame').setView([lat, lng], 15);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+                marker = L.marker([lat, lng]).addTo(map);
+            } else {
+                map.setView([lat, lng], 17);
+                marker.setLatLng([lat, lng]);
+            }
+        }
+
+        // Xử lý khi nhấn Login
+        function handleLogin() {
+            deviceID = document.getElementById('ip_xe').value.trim();
+            if(!deviceID) return alert("Vui lòng nhập ID thiết bị!");
+            
+            document.getElementById('login-page').style.display = 'none';
+            document.getElementById('dash').style.display = 'block';
+            
+            initMap();
+            loadSavedData();
+            connectToCloud();
+        }
+
+        // Kết nối MQTT qua HiveMQ
+        function connectToCloud() {
+            const clientId = "web_client_" + Math.random().toString(16).substr(2, 8);
+            mqttClient = new Paho.MQTT.Client("broker.hivemq.com", 8000, clientId);
+            
+            mqttClient.onMessageArrived = (msg) => {
+                const payload = msg.payloadString.split('|');
+                
+                if(payload[0] === "danger") {
+                    const lat = payload[1], lng = payload[2];
+                    const googleLink = `https://www.google.com/maps?q=${lat},${lng}`;
+                    
+                    updateUI(true, `${lat}, ${lng}`);
+                    initMap(parseFloat(lat), parseFloat(lng));
+                    
+                    addLog(`<span style='color:#f87171'>[SOS] Cảnh báo va chạm tại tọa độ ${lat}, ${lng}</span>`);
+                    addToHistory(lat, lng, true);
+                    
+                    // Rung điện thoại nếu có thể
+                    if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+                } else {
+                    updateUI(false);
+                    addLog("Tín hiệu: Thiết bị đang hoạt động bình thường.");
+                }
+            };
+
+            mqttClient.connect({ 
+                useSSL: false, 
+                onSuccess: () => {
+                    addLog("Đã kết nối thành công tới máy chủ.");
+                    mqttClient.subscribe("hethong_sos/data");
+                },
+                onFailure: (err) => {
+                    addLog("Lỗi kết nối: " + err.errorMessage);
+                }
+            });
+        }
+
+        function updateUI(isDanger, pos) {
+            const header = document.getElementById('st-header');
+            const dash = document.getElementById('dash');
+            if(isDanger) {
+                header.innerText = "!!! CẢNH BÁO: PHÁT HIỆN TAI NẠN !!!";
+                header.className = "header danger-bg";
+                dash.classList.add('body-danger');
+                document.getElementById('pos-info').innerText = pos;
+            } else {
+                header.innerText = "HỆ THỐNG TRỰC TUYẾN: AN TOÀN";
+                header.className = "header safe-bg";
+                dash.classList.remove('body-danger');
+            }
+        }
+
+        function addToHistory(lat, lng, isNew) {
+            const table = document.getElementById('history-body');
+            const time = new Date().toLocaleString('vi-VN');
+            const googleLink = `https://www.google.com/maps?q=${lat},${lng}`;
+            
+            const row = `<tr>
+                <td>${time}</td>
+                <td style="color:red; font-weight:bold;">Sự cố</td>
+                <td><a href="${googleLink}" target="_blank" class="map-link">Xem bản đồ</a></td>
+            </tr>`;
+            
+            table.insertAdjacentHTML('afterbegin', row);
+
+            if(isNew) {
+                let history = JSON.parse(localStorage.getItem('sos_history') || "[]");
+                history.push({time, lat, lng});
+                localStorage.setItem('sos_history', JSON.stringify(history));
+            }
+        }
+
+        function addLog(content) {
+            const box = document.getElementById('logs');
+            const time = new Date().toLocaleTimeString('vi-VN');
+            box.innerHTML += `[${time}] ${content}<br>`;
+            box.scrollTop = box.scrollHeight;
+            localStorage.setItem('sos_logs', box.innerHTML);
+        }
+
+        function loadSavedData() {
+            const history = JSON.parse(localStorage.getItem('sos_history') || "[]");
+            history.forEach(item => {
+                const table = document.getElementById('history-body');
+                const googleLink = `https://www.google.com/maps?q=${item.lat},${item.lng}`;
+                const row = `<tr><td>${item.time}</td><td style="color:red; font-weight:bold;">Sự cố</td><td><a href="${googleLink}" target="_blank" class="map-link">Vị trí</a></td></tr>`;
+                table.insertAdjacentHTML('afterbegin', row);
+            });
+            const logs = localStorage.getItem('sos_logs');
+            if(logs) document.getElementById('logs').innerHTML = logs;
+        }
+
+        function clearData() {
+            if(confirm("Xác nhận xóa toàn bộ dữ liệu lịch sử trên máy này?")) {
+                localStorage.clear();
+                location.reload();
+            }
+        }
+
+        function sendResetCommand() {
+            if(mqttClient && mqttClient.isConnected()) {
+                const message = new Paho.MQTT.Message("reset_system");
+                message.destinationName = "hethong_sos/lenh";
+                mqttClient.send(message);
+                updateUI(false);
+                addLog("Đã gửi lệnh Reset hệ thống về trạng thái an toàn.");
+            } else {
+                alert("Mất kết nối MQTT!");
+            }
+        }
+    </script>
+</body>
+</html>
